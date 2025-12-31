@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TinyMCE リッチテキスト → HTML 出力ツール</title>
+
+  <!-- TinyMCE (Cloud CDN) -->
+  <!-- 注意: no-api-key のままだと警告が出ることがあります。消すなら APIキーに置換してください。 -->
+  <script src="./tinymce/tinymce.min.js" referrerpolicy="origin"></script>
+
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif; margin: 0; }
+    header { padding: 12px 16px; border-bottom: 1px solid #e5e7eb; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 16px; }
+    .panel { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+    .panel h2 { margin: 0; padding: 10px 12px; font-size: 14px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+    .panel .content { padding: 12px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; background: #fff; }
+    button { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; cursor: pointer; }
+    button:hover { background: #f3f4f6; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    textarea { width: 100%; min-height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    iframe { width: 100%; height: 360px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+    .note { color: #6b7280; font-size: 12px; line-height: 1.5; margin-top: 8px; }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;">
+      <h1 style="font-size:16px; margin:0;">TinyMCE リッチテキスト編集 → HTMLツール</h1>
+      <div style="color:#6b7280; font-size:12px;">保存/読込(localStorage)・HTML出力・プレビュー・ファイル出力</div>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="row">
+      <button id="btnSave">保存（localStorage）</button>
+      <button id="btnLoad">読込（localStorage）</button>
+      <button id="btnToHtml">HTMLを下に反映</button>
+      <button id="btnPreview">プレビュー更新</button>
+      <button id="btnCopy">HTMLコピー</button>
+      <button id="btnDownload">HTMLをダウンロード</button>
+      <label style="display:inline-flex; gap:8px; align-items:center;">
+        <span style="font-size:12px; color:#374151;">HTMLファイル読み込み</span>
+        <input id="fileInput" type="file" accept=".html,.htm,text/html" />
+      </label>
+    </div>
+  </div>
+
+  <main>
+    <!-- Left: Editor -->
+    <section class="panel">
+      <h2>リッチテキスト編集（TinyMCE）</h2>
+      <div class="content">
+        <textarea id="editor">
+<h2>サンプル</h2>
+<p><strong>TinyMCE</strong> で編集した内容を <em>HTML</em> として保存できます。</p>
+<ul>
+  <li>太字 / 斜体 / 下線</li>
+  <li>リンク・表・リスト</li>
+  <li>コード表示（Source Code）</li>
+</ul>
+        </textarea>
+        <div class="note">
+          画像は「貼り付け」または「画像ボタン」で挿入できます（このサンプルは base64 埋め込み）。<br>
+          サーバへアップロードしたい場合は images_upload_handler を差し替えてください。
+        </div>
+      </div>
+    </section>
+
+    <!-- Right: HTML + Preview -->
+    <section class="panel">
+      <h2>出力HTML（編集結果）</h2>
+      <div class="content">
+        <textarea id="htmlOutput" spellcheck="false"></textarea>
+        <div style="height:10px;"></div>
+        <h2 style="margin:10px 0 8px; font-size:14px;">プレビュー</h2>
+        <iframe id="preview"></iframe>
+        <div class="note">
+          仕様上、プレビューは iframe にHTMLを流し込みます。外部CSSなどを使う場合は iframe の中に反映してください。
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const defaultLang = (navigator.language && navigator.language.startsWith("ja")) ? "ja" : "en";
+    // ---- TinyMCE init ----
+    tinymce.init({
+      selector: '#editor',
+      license_key: 'gpl',
+      language: defaultLang,
+      height: 420,
+      menubar: 'file edit view insert format tools table help',
+      plugins: [
+        'lists', 'link', 'image', 'table', 'code', 'fullscreen',
+        'autosave', 'wordcount', 'preview', 'searchreplace', 'visualblocks', 'help'
+      ],
+      toolbar: [
+        'undo redo | blocks | bold italic underline | forecolor backcolor | alignleft aligncenter alignright alignjustify',
+        '| bullist numlist outdent indent | link image table | removeformat | code fullscreen'
+      ].join(' '),
+
+      // autosave (localStorage) - 事故対策にも有効
+      autosave_ask_before_unload: true,
+      autosave_interval: '30s',
+      autosave_prefix: 'tinymce-autosave-{path}{query}-{id}-',
+      autosave_restore_when_empty: true,
+
+      // 画像アップロード（サンプル: base64 埋め込み）
+      images_upload_handler: (blobInfo, progress) => new Promise((resolve, reject) => {
+        try {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result); // data:...base64...
+          reader.onerror = () => reject('Image read failed');
+          reader.readAsDataURL(blobInfo.blob());
+        } catch (e) {
+          reject('Image handler error');
+        }
+      }),
+
+      // エディタ初期化後に localStorage から復元（任意）
+      setup: (editor) => {
+        editor.on('init', () => {
+          const saved = localStorage.getItem('rte_html_saved');
+          if (saved && editor.getContent({ format: 'html' }).trim() === '') {
+            editor.setContent(saved);
+          }
+        });
+      }
+    });
+
+    // ---- UI handlers ----
+    const htmlOutput = document.getElementById('htmlOutput');
+    const preview = document.getElementById('preview');
+
+    function getHtml() {
+      const ed = tinymce.get('editor');
+      if (!ed) return '';
+      return ed.getContent({ format: 'html' });
+    }
+
+    function setHtmlToOutput() {
+      htmlOutput.value = getHtml();
+    }
+
+    function updatePreview() {
+      const html = htmlOutput.value || getHtml();
+      const doc = preview.contentDocument || preview.contentWindow.document;
+      doc.open();
+      doc.write(`<!doctype html><html><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>body{font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;padding:14px;}</style>
+      </head><body>${html}</body></html>`);
+      doc.close();
+    }
+
+    document.getElementById('btnSave').addEventListener('click', () => {
+      const html = getHtml();
+      localStorage.setItem('rte_html_saved', html);
+      setHtmlToOutput();
+      alert('保存しました（localStorage）');
+    });
+
+    document.getElementById('btnLoad').addEventListener('click', () => {
+      const saved = localStorage.getItem('rte_html_saved');
+      if (!saved) return alert('保存データがありません');
+      tinymce.get('editor').setContent(saved);
+      setHtmlToOutput();
+      updatePreview();
+      alert('読込しました（localStorage）');
+    });
+
+    document.getElementById('btnToHtml').addEventListener('click', () => {
+      setHtmlToOutput();
+    });
+
+    document.getElementById('btnPreview').addEventListener('click', () => {
+      setHtmlToOutput();
+      updatePreview();
+    });
+
+    document.getElementById('btnCopy').addEventListener('click', async () => {
+      try {
+        setHtmlToOutput();
+        await navigator.clipboard.writeText(htmlOutput.value);
+        alert('HTMLをコピーしました');
+      } catch (e) {
+        alert('コピーに失敗しました（ブラウザ権限やHTTPS要件を確認）');
+      }
+    });
+
+    document.getElementById('btnDownload').addEventListener('click', () => {
+      setHtmlToOutput();
+      const blob = new Blob([htmlOutput.value], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'content.html';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('fileInput').addEventListener('change', async (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      // 読み込んだHTML全体から body 内だけ抜きたい場合はここで抽出する
+      tinymce.get('editor').setContent(text);
+      setHtmlToOutput();
+      updatePreview();
+      ev.target.value = '';
+    });
+
+    // 初回反映
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        setHtmlToOutput();
+        updatePreview();
+      }, 600);
+    });
+  </script>
+</body>
+</html>
