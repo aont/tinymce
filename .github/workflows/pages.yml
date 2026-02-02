@@ -3,7 +3,6 @@ name: Deploy GitHub Pages (public)
 on:
   push:
     branches: ["main"]
-    # Deploy only when changes occur in public/ (skip condition)
     paths:
       - "public/**"
       - ".github/workflows/pages.yml"
@@ -28,6 +27,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Prepare TinyMCE + Japanese language pack into public/tinymce
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          # Ensure public exists
+          mkdir -p public
+
+          # Clean target to avoid stale files
+          rm -rf public/tinymce
+          mkdir -p public/tinymce
+
+          # Work in temp directory
+          workdir="$(mktemp -d)"
+          cd "$workdir"
+
+          # Download & extract TinyMCE
+          curl -L -o tinymce_8.3.2.zip https://download.tiny.cloud/tinymce/community/tinymce_8.3.2.zip
+          unzip -q tinymce_8.3.2.zip
+
+          # Copy /tinymce/js/tinymce/ -> repo/public/tinymce/
+          # (zip root usually contains "tinymce/")
+          cp -a tinymce/js/tinymce/. "$GITHUB_WORKSPACE/public/tinymce/"
+
+          # Download & extract Japanese language pack into public/tinymce/
+          curl -L -o ja.zip https://download.tiny.cloud/tinymce/community/languagepacks/7/ja.zip
+          unzip -q ja.zip -d "$GITHUB_WORKSPACE/public/tinymce/"
 
       # Upload public/ as-is as the Pages site artifact
       - name: Upload artifact
