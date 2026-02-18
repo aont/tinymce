@@ -198,7 +198,7 @@
 
       setup: (editor) => {
         editor.on('init', () => {
-          const saved = localStorage.getItem('rte_html_saved');
+          const saved = localStorage.getItem('tinymceDemo.rteHtmlSaved');
           if (saved && editor.getContent({ format: 'html' }).trim() === '') {
             editor.setContent(saved);
           }
@@ -235,13 +235,13 @@ body {
     }
 
     document.getElementById('btnSave').onclick = () => {
-      localStorage.setItem('rte_html_saved', getHtml());
+      localStorage.setItem('tinymceDemo.rteHtmlSaved', getHtml());
       setHtmlToOutput();
       alert('保存しました');
     };
 
     document.getElementById('btnLoad').onclick = () => {
-      const saved = localStorage.getItem('rte_html_saved');
+      const saved = localStorage.getItem('tinymceDemo.rteHtmlSaved');
       if (!saved) return alert('保存データがありません');
       tinymce.get('editor').setContent(saved);
       setHtmlToOutput();
